@@ -1,0 +1,123 @@
+#!/bin/bash
+FLAG=0
+tmp=$(mktemp)
+CONFIG="/home/vaibhav_n/Vaibhav/Programming/unix/Anie/Config.json" #Your config file location
+kys=( $( jq '.animenotifier | keys[]' $CONFIG ) )
+
+getLatestEp() {
+
+	url=$( jq -r .animenotifier."$1".url $CONFIG ) || echo "Config ERROR"
+	echo $( curl $url | grep '<span class="item">Ep .' | awk '{print $3}' | awk -F'<' '{print $1}')
+}
+
+printAnimes() {
+	num=1
+	for i  in ${kys[@]};
+	do
+		echo "${num}) ${i}"
+		((num++));
+	done;
+}
+
+case $1 in
+	
+	"-config")
+		cat $CONFIG
+		exit
+		;;
+		
+	"-upep")
+	
+		if [[ $2 -eq null ]];
+		then
+			printAnimes
+			exit
+		fi
+		
+		jq --argjson e "$3" '.animenotifier.'${kys[(($2-1))]}'.ep = $e' $CONFIG > $tmp && mv $tmp $CONFIG
+		echo "Successfully Updated" & cat $CONFIG 
+		exit
+		;;
+		
+	"-upall")
+		for i in ${kys[@]};
+		do
+			ep=$( getLatestEp "${i}" )
+			jq --argjson e "${ep}"	'.animenotifier.'${i}'.ep = $e' $CONFIG > $tmp && mv $tmp $CONFIG
+		done
+		echo "Successfully Updated\n\n" & cat $CONFIG 
+		exit
+		;;
+
+	"-up")
+		if [[ $2 -eq null ]];
+		then
+			printAnimes
+			exit
+		fi
+	
+		args=( $@ )
+		for i in ${args[@]:1};
+		do
+			ep=$( getLatestEp "${kys[$((i-1))]}" )
+			jq --argjson e "${ep}" '.animenotifier.'${kys[$((i-1))]}'.ep = $e' $CONFIG > $tmp && mv $tmp $CONFIG
+			
+		done;
+		echo "Successfully Updated" & cat $CONFIG;
+		
+		exit
+		;;	
+
+	"-ani")
+		jq --arg url $3 '.animenotifier.'$2'.url = $url' $CONFIG  > $tmp && mv $tmp $CONFIG 
+		jq --argjson ep $4 '.animenotifier.'$2'.ep = $ep' $CONFIG  > $tmp && mv $tmp $CONFIG 
+		echo "Successfully Added" & cat $CONFIG;
+		exit
+		;;
+		
+	"-rmani")
+		if [[ $2 -eq null ]];
+		then
+			printAnimes
+			exit
+		fi
+		
+		jq 'del(.animenotifier.'${kys[(($2-1))]}')' $CONFIG  > $tmp && mv $tmp $CONFIG;
+		echo "Successfully Removed" & cat $CONFIG;
+		
+		exit 
+		;;
+
+esac
+
+while true;
+do
+
+	msg=""
+	for i in ${kys[@]};
+	do
+		ep=$( getLatestEp "${i}" )
+		
+		if [[ $ep -eq null ]];then echo "Network ERROR";break;fi
+		
+		oldep=$( jq -r .animenotifier.${i}.ep $CONFIG ) || echo "Config ERROR"
+		
+		if [[ $ep -gt $oldep ]];
+		then
+			FLAG=1
+			msg+="\n${i} Has Released New Episode - Ep : ${ep}\n\nYou Are $((${ep}-${oldep})) Episode(s) Behind.\n\n\n"
+			
+		fi
+	done;
+	
+	if [[ FLAG -eq 1 ]];
+	then
+		notify-send "New Episodes Update" "${msg}" -t 0;
+		((FLAG=0))
+	fi
+	
+	
+	sleep 30m;
+
+done;
+
